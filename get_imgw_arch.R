@@ -2,6 +2,7 @@ library(tidyverse)
 library(rvest)
 library(stringr)
 library(glue)
+library(DBI)
 
 base_url <- "https://dane.imgw.pl/data/dane_pomiarowo_obserwacyjne/dane_meteorologiczne/dobowe/klimat/"
 
@@ -68,10 +69,14 @@ process_file <- function(plik_url) {
 
 
 
+
+
 # pobierz listę folderów
 folders <- get_folders_list("")
 
-IMGW_data <- tibble()
+# baza do zapisu danych
+dbase <- dbConnect(RSQLite::SQLite(), "imgw.sqlite")
+
 
 # dla każdego folderu
 for(i in seq_along(folders)) {
@@ -85,7 +90,11 @@ for(i in seq_along(folders)) {
       pliczek <- file_path[j]
       print(glue("pobieranie pliku {pliczek}"))
 
-      IMGW_data <- bind_rows(IMGW_data, process_file(pliczek))
+      # przetworzenie archiwum
+      IMGW_data <- process_file(pliczek)
+
+      # zapis do bazy
+      dbWriteTable(dbase, "imgw", IMGW_data, append = TRUE)
    }
 }
 
