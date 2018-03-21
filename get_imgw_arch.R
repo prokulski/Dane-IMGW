@@ -98,4 +98,6 @@ for(i in seq_along(folders)) {
    }
 }
 
+dbDisconnect(dbase)
+
 
