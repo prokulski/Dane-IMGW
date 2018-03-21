@@ -60,6 +60,9 @@ process_file <- function(plik_url) {
       df_all <- bind_rows(df_all, df)
    }
 
+   # kasujemy rozpakowane pliki
+   unlink("tempdir/*")
+
    return(df_all)
 }
 
