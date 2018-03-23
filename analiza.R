@@ -1,26 +1,27 @@
-## Skad wziac dane o pogodzie w Polsce?
+## Skąd wziąć dane o pogodzie w Polsce?
 
-## Pory roku na przaestrzeni lat
+## Pory roku na przestrzeni lat
 # procentowy podział dni w roku na poszczególne pory roku
 # temperatura w marcu
 
-## Czy klimat sie ociepla?
-# roznice w temperaturze na przestrzeni lat
-# miesiace cieplejsze i zimniejsze od sredniej
-# liczba dni cieplejszych i ziemniejszych niz srednia
+## Czy klimat się ociepla?
+# różnice w temperaturze na przestrzeni lat
+# miesiące cieplejsze i zimniejsze od średniej
+# liczba dni cieplejszych i zimniejszych niż średnia
 
-## Czy jest roznica miedzy temperaturami w kraju?
+## Czy jest różnica miedzy temperaturami w kraju?
 
 ## Mapki temperatury dla 2017 roku
 
-## Kiedys to było...
-# snieg i temperatura w Boże Narodzenie
+## Kiedyś to było...
+# śnieg i temperatura w Boże Narodzenie
 # opady i temperatura w Lany Poniedziałek
 
 
 library(tidyverse)
 library(lubridate)
 library(ggridges)
+library(ggrepel)
 library(forcats)
 library(DBI)
 library(jsonlite)
@@ -32,7 +33,7 @@ theme_set(theme_bw())
 dbase <- dbConnect(RSQLite::SQLite(), "imgw.sqlite")
 
 
-# srednia stednia temperatura dzienna ze wszystkich stacji, dzień po dniu
+# średnia temperatura dzienna ze wszystkich stacji, dzień po dniu
 mTemps <- dbGetQuery(dbase,
                      "SELECT Rok, Miesiac, Dzien, AVG(MeanTemp) AS mTemp
                      FROM imgw
@@ -45,20 +46,20 @@ mTemps <- dbGetQuery(dbase,
    mutate(mTemp_all = mean(mTemp)) %>%
    ungroup() %>%
    # różnica pomiędzy temperaturą danego dnia a średnią ze wszystkich lat tego dnia
-   # dodatnie = cieplej niz średnia
+   # dodatnie = cieplej niż średnia
    mutate(dTemp = mTemp - mTemp_all) %>%
    # w zależności od średniej dziennej temperatury przypisujemy porę roku
    mutate(pora_roku = case_when(
       .$mTemp >= 15 ~ "lato",
-      .$mTemp >= 5 ~ "wiosna/jesien",
-      .$mTemp >= 0 ~ "przedwiosnie/przedzimie",
+      .$mTemp >= 5 ~ "wiosna/jesień",
+      .$mTemp >= 0 ~ "przedwiośnie/przedzimie",
       .$mTemp < 0 ~ "zima",
       TRUE ~ "cos innego" # to nie ma prawa sie trafić :)
    ))
 
 
 
-pory_roku_palette <- c("lato" = "#d7191c", "wiosna/jesien" = "#fdae61", "przedwiosnie/przedzimie" = "#abd9e9", "zima" = "#2c7bb6")
+pory_roku_palette <- c("lato" = "#d7191c", "wiosna/jesień" = "#fdae61", "przedwiośnie/przedzimie" = "#abd9e9", "zima" = "#2c7bb6")
 
 # pora roku na przestrzeni lat
 mTemps %>%
@@ -67,7 +68,10 @@ mTemps %>%
    scale_fill_manual(values = pory_roku_palette) +
    scale_y_reverse() +
    scale_x_date(date_labels = "%d/%m", date_breaks = "1 month") +
-   theme(legend.position = "bottom")
+   theme(legend.position = "bottom") +
+   labs(title = "Pora roku określona na podstawie temperatury dobowej",
+        x = "Dzień w roku", y = "Rok",
+        fill = "Pora roku")
 
 
 # to samo na poziomie średniej tygodniowej temperatury
@@ -78,8 +82,8 @@ mTemps %>%
    ungroup() %>%
    mutate(pora_roku = case_when(
       .$mTemp >= 15 ~ "lato",
-      .$mTemp >= 5 ~ "wiosna/jesien",
-      .$mTemp >= 0 ~ "przedwiosnie/przedzimie",
+      .$mTemp >= 5 ~ "wiosna/jesień",
+      .$mTemp >= 0 ~ "przedwiośnie/przedzimie",
       .$mTemp < 0 ~ "zima",
       TRUE ~ "cos innego"
    )) %>%
@@ -87,7 +91,12 @@ mTemps %>%
    geom_tile(aes(week, Rok, fill = pora_roku)) +
    scale_fill_manual(values = pory_roku_palette) +
    scale_y_reverse() +
-   theme(legend.position = "bottom")
+   scale_x_continuous(breaks = seq(1, 55, 5)) +
+   theme(legend.position = "bottom") +
+   labs(title = "Pora roku określona na podstawie temperatury dobowej",
+        x = "Tydzień w roku", y = "Rok",
+        fill = "Pora roku")
+
 
 
 
@@ -103,7 +112,9 @@ mTemps %>%
    filter(Rok != 2018) %>%
    ggplot() +
    geom_smooth(aes(Rok, p, color = pora_roku), se = FALSE) +
-   labs(y = "% dni w danej porze roku", x = "")
+   theme(legend.position = "bottom") +
+   labs(title = "Udział procentowy dni z określoną (na podstawie średniej dobowej temperatury)\nporą roku na przestrzeni lat 1951-2017",
+        y = "% dni w danej porze roku", x = "", color = "Pora roku")
 
 
 # temperatura w marcu
@@ -113,22 +124,24 @@ mTemps %>%
    ggplot() +
    geom_point(aes(make_date(2000, month(data), day(data)), mTemp, color = pora_roku)) +
    geom_line(aes(make_date(2000, month(data), day(data)), mTemp_all), alpha = 0.8) +
-   facet_wrap(~Rok) +
-   scale_x_date(date_labels = "%d/%m") +
-   theme(legend.position = "bottom")
+   facet_wrap(~Rok, ncol = 10) +
+   scale_x_date(date_labels = "%d", date_breaks = "7 days") +
+   theme(legend.position = "bottom") +
+   labs(title = "Średnie dobowe temperatury w marcu w porównaniu do średniej z lat 1951-2017",
+        y = "Średnia dobowa temperatura °C", x = "", color = "Pora roku")
 
 
 
-## Czy klimat sie ociepla?
+## Czy klimat się ociepla?
 
-# roznice od sredniej
+# różnice od średniej
 mTemps %>%
    ggplot() +
    geom_histogram(aes(dTemp, fill = as.factor(Rok)), binwidth = 0.5, show.legend = FALSE) +
    geom_vline(xintercept = 0, color = "red") +
-   facet_wrap(~Rok, ncol = 10)
-
-
+   facet_wrap(~Rok, ncol = 10) +
+   labs(title = "Rozkład różnicy temperatur dziennych w stosunku do średniej dla danego dnia z lat 1951-2017",
+        x = "Różnica temperatury °C", y = "Liczba dni")
 
 
 mTemps %>%
@@ -138,10 +151,12 @@ mTemps %>%
    ggplot() +
    geom_density_ridges(aes(dTemp, Rok, fill = as.factor(Rok)), show.legend = FALSE) +
    geom_vline(xintercept = 0, color = "red") +
-   scale_x_continuous(limits = c(-10, 7.5))
+   scale_x_continuous(limits = c(-10, 7.5)) +
+   labs(title = "Rozkład różnicy temperatur dziennych w stosunku do średniej dla danego dnia z lat 1951-2017",
+        x = "Różnica temperatury °C", y = "Rok")
 
 
-# miesiace cieplejsze i zimniejsze od sredniej
+# miesiące cieplejsze i zimniejsze od średniej
 mTemps %>%
    group_by(Rok, Miesiac) %>%
    summarise(m_dTemp = mean(dTemp)) %>%
@@ -149,10 +164,13 @@ mTemps %>%
    mutate(Miesiac = factor(Miesiac, levels = 12:1)) %>%
    ggplot() +
    geom_tile(aes(Rok, Miesiac, fill = m_dTemp), color = "gray10") +
-   scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0)
+   scale_fill_gradient2(low = "blue", mid = "#ffffaa", high = "red", midpoint = 0) +
+   theme(legend.position = "bottom") +
+   labs(title = "Miesiące cieplejsze i zimniejsze w stosunku do średniej z lat 1951-2017",
+        x = "Rok", y = "Miesiąc", fill = "Średnia miesięczna różnica temperatury w °C")
 
 
-# liczba dni cieplejszych i ziemniejszych niz srednia
+# liczba dni cieplejszych i zimniejszych niż średnia
 mTemps %>%
    mutate(cieplej = dTemp > 0) %>%
    group_by(Rok, cieplej) %>%
@@ -163,7 +181,11 @@ mTemps %>%
    ungroup() %>%
    ggplot() +
    geom_col(aes(Rok, cieplej_p, fill = cieplej)) +
-   geom_hline(yintercept = 50)
+   geom_hline(yintercept = 50) +
+   scale_fill_manual(values = c("blue", "red"), labels = c("Zimniej", "Cieplej")) +
+   theme(legend.position = "bottom") +
+   labs(title = "Podział dni cieplejszych i zimniejszych niż średnia z lat 1951-2017",
+        x = "Rok", y = "Udział %", fill = "Cieplej?")
 
 
 mTemps %>%
@@ -175,13 +197,18 @@ mTemps %>%
    mutate(cieplej_p = 100*n/sum(n)) %>%
    ungroup() %>%
    ggplot() +
-   geom_smooth(aes(Rok, cieplej_p, color = cieplej), se = FALSE) +
-   scale_y_continuous(limits = c(0, 100))
+   geom_smooth(aes(Rok, cieplej_p, color = cieplej), method = "loess") +
+   scale_y_continuous(limits = c(0, 100)) +
+   scale_color_manual(values = c("blue", "red"), labels = c("Zimniej", "Cieplej")) +
+   theme(legend.position = "bottom") +
+   labs(title = "Podział dni cieplejszych i zimniejszych niż średnia z lat 1951-2017",
+        x = "Rok", y = "Udział %", color = "Cieplej?")
 
 
 
 
-## czy jest roznica miedzy temperaturami w kraju?
+
+## czy jest różnica miedzy temperaturami w kraju?
 
 # z jakich stacji mamy najwięcej pomiarów?
 dbGetQuery(dbase,
@@ -203,7 +230,7 @@ tab <- dbGetQuery(dbase,
                   WHERE Kod_stacji IN (250190390, 252170210, 252200150, 252210050, 254200080);") %>%
    mutate(data = make_date(Rok, Miesiac, Dzien)) %>%
    left_join(stacje, by = "Kod_stacji") %>%
-   # kolejnosc stacji od północy
+   # kolejność stacji od północy
    mutate(Nazwa_stacji = fct_relevel(Nazwa_stacji, "Lidzbark Warmiński", "Pułtusk", "Warszawa", "Kórnik", "Kraków"))
 
 # liczba najcieplejszych i najzimniejszych dni wg stacji
@@ -221,40 +248,43 @@ tab %>%
    ungroup() %>%
    ggplot() +
    geom_tile(aes(Nazwa_stacji, poz, fill = p), show.legend = FALSE, color = "gray50") +
-   geom_text(aes(Nazwa_stacji, poz, label = round(p, 1))) +
+   geom_text(aes(Nazwa_stacji, poz, label = sprintf("%.1f%%", p))) +
    scale_y_reverse() +
    scale_fill_distiller(palette = "RdYlBu") +
-   labs(y = "Pozycja w kolejności od najzimniejszych (1) do najcieplejszych (5)", x = "")
+   labs(title = "Bieguny ciepła i zimna według stacji meteo",
+        y = "Pozycja w kolejności od najzimniejszych (1) do najcieplejszych (5)", x = "")
 
 
 
 ## Mapki 2017
 
-# Wszystkie stacje jakie dokonaly pomiarow w 2017 roku
+# pomysł na bazie https://timogrossenbacher.ch/2018/03/categorical-spatial-interpolation-with-r/
+
+# Wszystkie stacje jakie dokonały pomiarów w 2017 roku
 stacje2017 <- dbGetQuery(dbase,
-                        "SELECT Kod_stacji, COUNT(*) AS n
-                        FROM imgw
-                        WHERE Rok = 2017
-                        GROUP BY Kod_stacji;") %>%
-   # tylko te, z pelnym rokiem pomiarow
+                         "SELECT Kod_stacji, COUNT(*) AS n
+                         FROM imgw
+                         WHERE Rok = 2017
+                         GROUP BY Kod_stacji;") %>%
+   # tylko te, z pełnym rokiem pomiarów
    filter(n == 365) %>%
    mutate(Kod_stacji = as.character(Kod_stacji))
 
-# polozenie stacji
+# położenie stacji
 stacje_lokalizacje <- fromJSON("http://monitor.pogodynka.pl/api/map/?category=meteo") %>%
    select(Kod_stacji = i, long = lo, lat = la, Nazwa_stacji = n) %>%
    mutate(Kod_stacji = as.character(Kod_stacji))
 
 
-# laczymy z polozeniem i zostawiamy te, ktore maja polozenie
+# łączymy z położeniem i zostawiamy te, które mają położenie
 stacje2017 <- left_join(stacje2017, stacje_lokalizacje, by = "Kod_stacji") %>%
    filter(!is.na(long))
 
 # temperatura w 2017 roku w wybranych stacjach pomiarowych
 temperatura2017 <- dbGetQuery(dbase,
-           paste0("SELECT Kod_stacji, Miesiac, Dzien, MeanTemp
-                  FROM imgw
-                  WHERE Rok = 2017 AND Kod_stacji IN (", paste(stacje2017$Kod_stacji, collapse = ", "), ");")) %>%
+                              paste0("SELECT Kod_stacji, Miesiac, Dzien, MeanTemp
+                                     FROM imgw
+                                     WHERE Rok = 2017 AND Kod_stacji IN (", paste(stacje2017$Kod_stacji, collapse = ", "), ");")) %>%
    mutate(Kod_stacji = as.character(Kod_stacji))%>%
    left_join(stacje_lokalizacje, by = "Kod_stacji") %>%
    mutate(data = make_date(2017, Miesiac, Dzien))
@@ -263,36 +293,59 @@ temperatura2017 <- dbGetQuery(dbase,
 # kontury Polski
 mapa <- map_data("world") %>% filter(region == "Poland")
 
-# siatka punktow w Polsce
+# siatka punktów w Polsce
 poland_grid <- expand.grid(long = seq(min(mapa$long), max(mapa$long), 0.05),
                            lat = seq(min(mapa$lat), max(mapa$lat), 0.05))
 
 
-# funkcja dla wskazanego dnia interpoluje temperature i zapisuje gotowa mape
+# funkcja dla wskazanego dnia interpoluje temperaturę i zapisuje gotowa mapę
 save_temp_map <- function(f_data) {
+
+   # dane ze wszystkich stacji tego dnia
    temp_dzien <- temperatura2017 %>%
-      filter(data == f_data) %>%
+      filter(data == f_data)
+
+   # szukamy stacji z temperatura minimalna i maksymalna danego dnia
+   temp_dzien_minmax <- temp_dzien %>%
+      filter(MeanTemp == min(MeanTemp) | MeanTemp == max(MeanTemp))
+
+
+   # dane potrzebne do obliczenia wartości pozostałych punktów w siatce
+   temp_dzien <- temp_dzien %>%
       select(long, lat, MeanTemp)
 
+   # obliczamy wartości temperatury dla wszystkich punktów siatki
    temp_dzien_kknn <- kknn(MeanTemp~., temp_dzien, poland_grid, distance = 1, kernel = "gaussian")
 
+   # dodajemy obliczone temperatury do siatki punktów
    temp_dzien_wynik <- poland_grid %>%
       mutate(MeanTemp = fitted(temp_dzien_kknn))
 
+   # rysujemy cala mapę
    plot <- ggplot(temp_dzien_wynik) +
       # warstwa z temperaturami
       geom_point(aes(long, lat, color = MeanTemp)) +
       # warstwa z konturami Polski
       geom_polygon(data = mapa, aes(long, lat, group = group), color = "black", fill = NA) +
+      # warstwa z punktem min temperatury
+      geom_label_repel(data = filter(temp_dzien_minmax, MeanTemp == min(MeanTemp)),
+                       aes(long, lat, label = sprintf("%s: %.1f°C", Nazwa_stacji, MeanTemp)), alpha = 0.7) +
+      geom_point(data = filter(temp_dzien_minmax, MeanTemp == min(MeanTemp)),
+                 aes(long, lat), color = "blue") +
+      # warstwa z punktem max temperatury
+      geom_label_repel(data = filter(temp_dzien_minmax, MeanTemp == max(MeanTemp)),
+                       aes(long, lat, label = sprintf("%s: %.1f°C", Nazwa_stacji, MeanTemp)), alpha = 0.7) +
+      geom_point(data = filter(temp_dzien_minmax, MeanTemp == max(MeanTemp)),
+                 aes(long, lat), color = "red") +
       # stala skala kolorow dla wszystkich dni
-      scale_color_gradient2(low = "blue", mid = "white", high = "red",
+      scale_color_gradient2(low = "blue", mid = "#ffffaa", high = "red", midpoint = 0,
                             limits = c(min(temperatura2017$MeanTemp), max(temperatura2017$MeanTemp))) +
       coord_map() +
       theme_void() +
       theme(legend.position = "bottom") +
       labs(title = f_data,
-           subtitle = sprintf("Srednia temperatura w kraju: %.1f", mean(temp_dzien$MeanTemp)),
-           color = "Srednia temperatura dobowa: ")
+           subtitle = sprintf("Średnia temperatura w kraju:%*.1f°C", 5, mean(temp_dzien$MeanTemp)),
+           color = "Średnia temperatura dobowa [°C]: ")
 
    # zapisanie wykresu na dysk
    ggsave(sprintf("mapki/%03d.png", yday(f_data)), plot,
@@ -300,7 +353,7 @@ save_temp_map <- function(f_data) {
           width = 8, height = 6, dpi = 100)
 }
 
-# dla wszystkich kolejnych dni z 2017 roku generujemy mape i zapisujemy jako plik PNG
+# dla wszystkich kolejnych dni z 2017 roku generujemy mapę i zapisujemy jako plik PNG
 seq(as_date("2017-01-01"), as_date("2017-12-31"), by = "day") %>% lapply(save_temp_map)
 
 # potrzebny ImageMagick
@@ -310,13 +363,13 @@ seq(as_date("2017-01-01"), as_date("2017-12-31"), by = "day") %>% lapply(save_te
 
 
 
-# snieg w Wigilie
-# srednia stednia temperatura dzienna ze wszystkich stacji, dzień po dniu
+# śnieg w Wigilie
+# średnia temperatura dzienna ze wszystkich stacji, dzień po dniu
 pogoda_bn <- dbGetQuery(dbase,
-                     "SELECT Rok, Miesiac, Dzien, AVG(WysSniegu) AS WysSniegu, AVG(MeanTemp) AS MeanTemp
-                     FROM imgw
-                     WHERE Rok <> 2018 AND Miesiac = 12 AND Dzien IN (22, 23, 24, 25, 26, 27, 28)
-                     GROUP BY Rok, Miesiac, Dzien;") %>%
+                        "SELECT Rok, Miesiac, Dzien, AVG(WysSniegu) AS WysSniegu, AVG(MeanTemp) AS MeanTemp
+                        FROM imgw
+                        WHERE Rok <> 2018 AND Miesiac = 12 AND Dzien IN (22, 23, 24, 25, 26, 27, 28)
+                        GROUP BY Rok, Miesiac, Dzien;") %>%
    # robimy sobie pole z datą
    mutate(data = make_date(Rok, Miesiac, Dzien))
 
@@ -330,8 +383,8 @@ pogoda_bn %>%
    geom_smooth(aes(Rok, snieg), color = "blue", se = FALSE) +
    geom_point(aes(Rok, temp), color = "red", alpha = 0.7) +
    geom_smooth(aes(Rok, temp), color = "red", se = FALSE) +
-   labs(title = "Snieg i temperatura w okresie Bożego Narodzenia (22-28 grudnia)",
-        x = "Rok", y = "Wysokosc pokrywy snieznej w cm (slupki, niebieska linia)\nSrednia temperatura dobowa w C (punkty, czerowna linia)")
+   labs(title = "Śnieg i temperatura w okresie Bożego Narodzenia (22-28 grudnia)",
+        x = "Rok", y = "Grubość pokrywy śnieżnej w cm (słupki, niebieska linia)\nŚrednia temperatura dobowa w °C (punkty, czerwona linia)")
 
 
 
@@ -363,19 +416,19 @@ data_Wielkanocy <- function(rok) {
 }
 
 
-# wyznaczamy daty Lanych Poniedzialków
+# wyznaczamy daty Lanych Poniedziałków
 lane_poniedzialki <- tibble(data = data_Wielkanocy(1951:2017) + 1)
 
-# pobieramy pogode
+# pobieramy pogodę
 pogoda_wielkanoc <- dbGetQuery(dbase,
-                    "SELECT Rok, Miesiac, Dzien, AVG(SumaOpadow) AS SumaOpadow, AVG(MeanTemp) AS MeanTemp
+                     "SELECT Rok, Miesiac, Dzien, AVG(SumaOpadow) AS SumaOpadow, AVG(MeanTemp) AS MeanTemp
                      FROM imgw
                      WHERE Rok <> 2018
                      GROUP BY Rok, Miesiac, Dzien;") %>%
    # robimy sobie pole z datą
    mutate(data = make_date(Rok, Miesiac, Dzien))
 
-
+# JOINem dat Lanych Poniedziałków z pogodą zostawiamy tylko pogodę Lanych Poniedziałków
 pogoda_wielkanoc <- left_join(lane_poniedzialki, pogoda_wielkanoc, by = "data")
 
 
@@ -386,6 +439,4 @@ pogoda_wielkanoc %>%
    geom_point(aes(Rok, MeanTemp), color = "red", alpha = 0.7) +
    geom_smooth(aes(Rok, MeanTemp), color = "red", se = FALSE) +
    labs(title = "Opady i temperatura w Lany Poniedziałek",
-        x = "Rok", y = "Suma opadow w mm (slupki, niebieska linia)\nSrednia temperatura dobowa w C (punkty, czerowna linia)")
-
-
+        x = "Rok", y = "Suma opadów w mm (słupki, niebieska linia)\nŚrednia temperatura dobowa w °C (punkty, czerwona linia)")
