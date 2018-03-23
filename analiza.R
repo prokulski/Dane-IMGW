@@ -1,8 +1,30 @@
+## Skad wziac dane o pogodzie w Polsce?
+
+## Pory roku na przaestrzeni lat
+# procentowy podział dni w roku na poszczególne pory roku
+# temperatura w marcu
+
+## Czy klimat sie ociepla?
+# roznice w temperaturze na przestrzeni lat
+# miesiace cieplejsze i zimniejsze od sredniej
+# liczba dni cieplejszych i ziemniejszych niz srednia
+
+## Czy jest roznica miedzy temperaturami w kraju?
+
+## Mapki temperatury dla 2017 roku
+
+## Kiedys to było...
+# snieg i temperatura w Boże Narodzenie
+# opady i temperatura w Lany Poniedziałek
+
+
 library(tidyverse)
 library(lubridate)
 library(ggridges)
 library(forcats)
 library(DBI)
+library(jsonlite)
+library(kknn)
 
 
 theme_set(theme_bw())
@@ -69,18 +91,6 @@ mTemps %>%
 
 
 
-# temperatura w marcu
-mTemps %>%
-   filter(Miesiac == 3) %>%
-   # średnia temperatura dzienna ze wszystkich lat
-   ggplot() +
-   geom_point(aes(make_date(2000, month(data), day(data)), mTemp, color = pora_roku)) +
-   geom_line(aes(make_date(2000, month(data), day(data)), mTemp_all), alpha = 0.8) +
-   facet_wrap(~Rok) +
-   scale_x_date(date_labels = "%d/%m") +
-   theme(legend.position = "bottom")
-
-
 
 # procentowy podział dni w roku na poszczególne pory roku
 mTemps %>%
@@ -96,6 +106,18 @@ mTemps %>%
    labs(y = "% dni w danej porze roku", x = "")
 
 
+# temperatura w marcu
+mTemps %>%
+   filter(Miesiac == 3) %>%
+   # średnia temperatura dzienna ze wszystkich lat
+   ggplot() +
+   geom_point(aes(make_date(2000, month(data), day(data)), mTemp, color = pora_roku)) +
+   geom_line(aes(make_date(2000, month(data), day(data)), mTemp_all), alpha = 0.8) +
+   facet_wrap(~Rok) +
+   scale_x_date(date_labels = "%d/%m") +
+   theme(legend.position = "bottom")
+
+
 
 ## Czy klimat sie ociepla?
 
@@ -104,7 +126,7 @@ mTemps %>%
    ggplot() +
    geom_histogram(aes(dTemp, fill = as.factor(Rok)), binwidth = 0.5, show.legend = FALSE) +
    geom_vline(xintercept = 0, color = "red") +
-   facet_wrap(~Rok)
+   facet_wrap(~Rok, ncol = 10)
 
 
 
@@ -184,12 +206,11 @@ tab <- dbGetQuery(dbase,
    # kolejnosc stacji od północy
    mutate(Nazwa_stacji = fct_relevel(Nazwa_stacji, "Lidzbark Warmiński", "Pułtusk", "Warszawa", "Kórnik", "Kraków"))
 
-
 # liczba najcieplejszych i najzimniejszych dni wg stacji
 # n = 1 -> najzimniejsza stacja
 tab %>%
    group_by(data) %>%
-   # od najzimniejszej temperatury
+   # od najniższej temperatury
    arrange(MeanTemp) %>%
    mutate(poz = 1:n()) %>%
    ungroup() %>%
@@ -204,4 +225,167 @@ tab %>%
    scale_y_reverse() +
    scale_fill_distiller(palette = "RdYlBu") +
    labs(y = "Pozycja w kolejności od najzimniejszych (1) do najcieplejszych (5)", x = "")
+
+
+
+## Mapki 2017
+
+# Wszystkie stacje jakie dokonaly pomiarow w 2017 roku
+stacje2017 <- dbGetQuery(dbase,
+                        "SELECT Kod_stacji, COUNT(*) AS n
+                        FROM imgw
+                        WHERE Rok = 2017
+                        GROUP BY Kod_stacji;") %>%
+   # tylko te, z pelnym rokiem pomiarow
+   filter(n == 365) %>%
+   mutate(Kod_stacji = as.character(Kod_stacji))
+
+# polozenie stacji
+stacje_lokalizacje <- fromJSON("http://monitor.pogodynka.pl/api/map/?category=meteo") %>%
+   select(Kod_stacji = i, long = lo, lat = la, Nazwa_stacji = n) %>%
+   mutate(Kod_stacji = as.character(Kod_stacji))
+
+
+# laczymy z polozeniem i zostawiamy te, ktore maja polozenie
+stacje2017 <- left_join(stacje2017, stacje_lokalizacje, by = "Kod_stacji") %>%
+   filter(!is.na(long))
+
+# temperatura w 2017 roku w wybranych stacjach pomiarowych
+temperatura2017 <- dbGetQuery(dbase,
+           paste0("SELECT Kod_stacji, Miesiac, Dzien, MeanTemp
+                  FROM imgw
+                  WHERE Rok = 2017 AND Kod_stacji IN (", paste(stacje2017$Kod_stacji, collapse = ", "), ");")) %>%
+   mutate(Kod_stacji = as.character(Kod_stacji))%>%
+   left_join(stacje_lokalizacje, by = "Kod_stacji") %>%
+   mutate(data = make_date(2017, Miesiac, Dzien))
+
+
+# kontury Polski
+mapa <- map_data("world") %>% filter(region == "Poland")
+
+# siatka punktow w Polsce
+poland_grid <- expand.grid(long = seq(min(mapa$long), max(mapa$long), 0.05),
+                           lat = seq(min(mapa$lat), max(mapa$lat), 0.05))
+
+
+# funkcja dla wskazanego dnia interpoluje temperature i zapisuje gotowa mape
+save_temp_map <- function(f_data) {
+   temp_dzien <- temperatura2017 %>%
+      filter(data == f_data) %>%
+      select(long, lat, MeanTemp)
+
+   temp_dzien_kknn <- kknn(MeanTemp~., temp_dzien, poland_grid, distance = 1, kernel = "gaussian")
+
+   temp_dzien_wynik <- poland_grid %>%
+      mutate(MeanTemp = fitted(temp_dzien_kknn))
+
+   plot <- ggplot(temp_dzien_wynik) +
+      # warstwa z temperaturami
+      geom_point(aes(long, lat, color = MeanTemp)) +
+      # warstwa z konturami Polski
+      geom_polygon(data = mapa, aes(long, lat, group = group), color = "black", fill = NA) +
+      # stala skala kolorow dla wszystkich dni
+      scale_color_gradient2(low = "blue", mid = "white", high = "red",
+                            limits = c(min(temperatura2017$MeanTemp), max(temperatura2017$MeanTemp))) +
+      coord_map() +
+      theme_void() +
+      theme(legend.position = "bottom") +
+      labs(title = f_data,
+           subtitle = sprintf("Srednia temperatura w kraju: %.1f", mean(temp_dzien$MeanTemp)),
+           color = "Srednia temperatura dobowa: ")
+
+   # zapisanie wykresu na dysk
+   ggsave(sprintf("mapki/%03d.png", yday(f_data)), plot,
+          # rozmiar obrazka - 800x600 px
+          width = 8, height = 6, dpi = 100)
+}
+
+# dla wszystkich kolejnych dni z 2017 roku generujemy mape i zapisujemy jako plik PNG
+seq(as_date("2017-01-01"), as_date("2017-12-31"), by = "day") %>% lapply(save_temp_map)
+
+# potrzebny ImageMagick
+# jak zainstalować na Ubuntu https://www.tutorialspoint.com/articles/how-to-install-imagemagick-on-ubuntu
+# convert -delay 50 -loop 0 *.png animation.gif
+
+
+
+
+# snieg w Wigilie
+# srednia stednia temperatura dzienna ze wszystkich stacji, dzień po dniu
+pogoda_bn <- dbGetQuery(dbase,
+                     "SELECT Rok, Miesiac, Dzien, AVG(WysSniegu) AS WysSniegu, AVG(MeanTemp) AS MeanTemp
+                     FROM imgw
+                     WHERE Rok <> 2018 AND Miesiac = 12 AND Dzien IN (22, 23, 24, 25, 26, 27, 28)
+                     GROUP BY Rok, Miesiac, Dzien;") %>%
+   # robimy sobie pole z datą
+   mutate(data = make_date(Rok, Miesiac, Dzien))
+
+pogoda_bn %>%
+   group_by(Rok) %>%
+   summarise(snieg = mean(WysSniegu),
+             temp = mean(MeanTemp)) %>%
+   ungroup() %>%
+   ggplot() +
+   geom_col(aes(Rok, snieg), fill = "lightblue") +
+   geom_smooth(aes(Rok, snieg), color = "blue", se = FALSE) +
+   geom_point(aes(Rok, temp), color = "red", alpha = 0.7) +
+   geom_smooth(aes(Rok, temp), color = "red", se = FALSE) +
+   labs(title = "Snieg i temperatura w okresie Bożego Narodzenia (22-28 grudnia)",
+        x = "Rok", y = "Wysokosc pokrywy snieznej w cm (slupki, niebieska linia)\nSrednia temperatura dobowa w C (punkty, czerowna linia)")
+
+
+
+
+# czy Lany Poniedziałek zawsze był zimny?
+
+## wyznaczenie daty Wielkanocy
+# za http://www.algorytm.org/przetwarzanie-dat/wyznaczanie-daty-wielkanocy-metoda-meeusa-jonesa-butchera.html
+# Metoda Metoda Meeusa/Jonesa/Butchera przedstawiona przez [Jeana Meeusa](https://pl.wikipedia.org/wiki/Jean_Meeus) w jego książce *Astronomical Algorithms* w 1991 roku.
+
+data_Wielkanocy <- function(rok) {
+   a <- rok %% 19
+   b <- floor(rok/100)
+   c <- rok %% 100
+   d <- floor(b/4)
+   e <- b %% 4
+   f <- floor((b+8)/25)
+   g <- floor((b-f+1)/3)
+   h <- (19*a + b - d - g +15) %% 30
+   i <- floor(c/4)
+   k <- c %% 4
+   l <- (32+2*e+2*i-h-k) %% 7
+   m <- floor((a + 11*h + 22*l)/451)
+   p <- (h + l - 7*m + 114) %% 31
+   dzien <- p + 1
+   miesiac <- floor((h + l - 7*m + 114)/31)
+
+   return(make_date(rok, miesiac, dzien))
+}
+
+
+# wyznaczamy daty Lanych Poniedzialków
+lane_poniedzialki <- tibble(data = data_Wielkanocy(1951:2017) + 1)
+
+# pobieramy pogode
+pogoda_wielkanoc <- dbGetQuery(dbase,
+                    "SELECT Rok, Miesiac, Dzien, AVG(SumaOpadow) AS SumaOpadow, AVG(MeanTemp) AS MeanTemp
+                     FROM imgw
+                     WHERE Rok <> 2018
+                     GROUP BY Rok, Miesiac, Dzien;") %>%
+   # robimy sobie pole z datą
+   mutate(data = make_date(Rok, Miesiac, Dzien))
+
+
+pogoda_wielkanoc <- left_join(lane_poniedzialki, pogoda_wielkanoc, by = "data")
+
+
+pogoda_wielkanoc %>%
+   ggplot() +
+   geom_col(aes(Rok, SumaOpadow ), fill = "lightblue") +
+   geom_smooth(aes(Rok, SumaOpadow ), color = "blue", se = FALSE) +
+   geom_point(aes(Rok, MeanTemp), color = "red", alpha = 0.7) +
+   geom_smooth(aes(Rok, MeanTemp), color = "red", se = FALSE) +
+   labs(title = "Opady i temperatura w Lany Poniedziałek",
+        x = "Rok", y = "Suma opadow w mm (slupki, niebieska linia)\nSrednia temperatura dobowa w C (punkty, czerowna linia)")
+
 

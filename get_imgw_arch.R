@@ -4,8 +4,11 @@ library(stringr)
 library(glue)
 library(DBI)
 
+# zrodlo danych
 base_url <- "https://dane.imgw.pl/data/dane_pomiarowo_obserwacyjne/dane_meteorologiczne/dobowe/klimat/"
 
+
+# wez liste folderow
 get_folders_list <- function(folder) {
    folder_url <- paste0(base_url, folder)
 
@@ -18,6 +21,7 @@ get_folders_list <- function(folder) {
 }
 
 
+# wez liste plikow
 get_files_list <- function(folder) {
    folder_url <- paste0(base_url, folder)
 
@@ -28,7 +32,7 @@ get_files_list <- function(folder) {
    return(hrefs)
 }
 
-
+# obsluga pliku
 process_file <- function(plik_url) {
    # sciagnij plik
    tmp_file <- tempfile()
@@ -40,6 +44,7 @@ process_file <- function(plik_url) {
    # usun sciagniety
    unlink(tmp_file)
 
+   # poszukaj plikow CSV z danymi
    pliki <- list.files("tempdir", "k_d_") %>% .[str_sub(., 1, 6) != "k_d_t_"]
 
    df_all <- tibble()
@@ -85,7 +90,7 @@ for(i in seq_along(folders)) {
    files <- get_files_list(folders[i])
    file_path <- paste0(base_url, folders[i], files)
 
-   # dla każdego pliku z danego folderu
+   # dla każdego pliku z danego folderu (online)
    for(j in seq_along(file_path)) {
       pliczek <- file_path[j]
       print(glue("pobieranie pliku {pliczek}"))
@@ -98,6 +103,6 @@ for(i in seq_along(folders)) {
    }
 }
 
+# rozlaczenie
 dbDisconnect(dbase)
-
 
