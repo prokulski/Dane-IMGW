@@ -27,8 +27,14 @@ library(DBI)
 library(jsonlite)
 library(kknn)
 
+theme_set(theme_minimal() +
+             theme(plot.title = element_text(family = NULL, face = "bold", size = 18, color = "black"),
+                   plot.subtitle = element_text(family = NULL, face = "plain", size = 12, color = "black"),
+                   plot.caption = element_text(family = NULL, face = "italic", size = 9, color = "darkgray"),
+                   plot.background = element_rect(fill="#efefef", color="#aaaaaa"),
+                   panel.background = element_rect(fill = "white", color="black"),
+                   strip.text.x = element_text(face = "bold")))
 
-theme_set(theme_bw())
 
 dbase <- dbConnect(RSQLite::SQLite(), "imgw.sqlite")
 
@@ -297,6 +303,9 @@ mapa <- map_data("world") %>% filter(region == "Poland")
 poland_grid <- expand.grid(long = seq(min(mapa$long), max(mapa$long), 0.05),
                            lat = seq(min(mapa$lat), max(mapa$lat), 0.05))
 
+# w tym miejscu dobrze byłoby sprawdzic, ktore z punktow siatki leza w Polsce i odciac te, ktore sa poza granicami
+# przygadna bedzie funckja gWithin() z pakietu rgeos - wiecej szczegolow we wpisie http://prokulski.net/index.php/2017/12/22/mapy-w-r-rgeos/
+
 
 # funkcja dla wskazanego dnia interpoluje temperaturę i zapisuje gotowa mapę
 save_temp_map <- function(f_data) {
@@ -306,8 +315,8 @@ save_temp_map <- function(f_data) {
       filter(data == f_data)
 
    # szukamy stacji z temperatura minimalna i maksymalna danego dnia
-   temp_dzien_minmax <- temp_dzien %>%
-      filter(MeanTemp == min(MeanTemp) | MeanTemp == max(MeanTemp))
+   # temp_dzien_minmax <- temp_dzien %>%
+   #    filter(MeanTemp == min(MeanTemp) | MeanTemp == max(MeanTemp))
 
 
    # dane potrzebne do obliczenia wartości pozostałych punktów w siatce
@@ -328,15 +337,15 @@ save_temp_map <- function(f_data) {
       # warstwa z konturami Polski
       geom_polygon(data = mapa, aes(long, lat, group = group), color = "black", fill = NA) +
       # warstwa z punktem min temperatury
-      geom_label_repel(data = filter(temp_dzien_minmax, MeanTemp == min(MeanTemp)),
-                       aes(long, lat, label = sprintf("%s: %.1f°C", Nazwa_stacji, MeanTemp)), alpha = 0.7) +
-      geom_point(data = filter(temp_dzien_minmax, MeanTemp == min(MeanTemp)),
-                 aes(long, lat), color = "blue") +
+      # geom_label_repel(data = filter(temp_dzien_minmax, MeanTemp == min(MeanTemp)),
+      #                  aes(long, lat, label = sprintf("%s: %.1f°C", Nazwa_stacji, MeanTemp)), alpha = 0.7) +
+      # geom_point(data = filter(temp_dzien_minmax, MeanTemp == min(MeanTemp)),
+      #            aes(long, lat), color = "blue") +
       # warstwa z punktem max temperatury
-      geom_label_repel(data = filter(temp_dzien_minmax, MeanTemp == max(MeanTemp)),
-                       aes(long, lat, label = sprintf("%s: %.1f°C", Nazwa_stacji, MeanTemp)), alpha = 0.7) +
-      geom_point(data = filter(temp_dzien_minmax, MeanTemp == max(MeanTemp)),
-                 aes(long, lat), color = "red") +
+      # geom_label_repel(data = filter(temp_dzien_minmax, MeanTemp == max(MeanTemp)),
+      #                  aes(long, lat, label = sprintf("%s: %.1f°C", Nazwa_stacji, MeanTemp)), alpha = 0.7) +
+      # geom_point(data = filter(temp_dzien_minmax, MeanTemp == max(MeanTemp)),
+      #            aes(long, lat), color = "red") +
       # stala skala kolorow dla wszystkich dni
       scale_color_gradient2(low = "blue", mid = "#ffffaa", high = "red", midpoint = 0,
                             limits = c(min(temperatura2017$MeanTemp), max(temperatura2017$MeanTemp))) +
@@ -349,17 +358,22 @@ save_temp_map <- function(f_data) {
 
    # zapisanie wykresu na dysk
    ggsave(sprintf("mapki/%03d.png", yday(f_data)), plot,
-          # rozmiar obrazka - 800x600 px
-          width = 8, height = 6, dpi = 100)
+          # rozmiar obrazka - 1920x1080
+          width = 19.20, height = 10.80, dpi = 100)
 }
 
 # dla wszystkich kolejnych dni z 2017 roku generujemy mapę i zapisujemy jako plik PNG
 seq(as_date("2017-01-01"), as_date("2017-12-31"), by = "day") %>% lapply(save_temp_map)
 
-# potrzebny ImageMagick
-# jak zainstalować na Ubuntu https://www.tutorialspoint.com/articles/how-to-install-imagemagick-on-ubuntu
-# convert -delay 50 -loop 0 *.png animation.gif
 
+# potrzebny ImageMagick - jak zainstalować na Ubuntu https://www.tutorialspoint.com/articles/how-to-install-imagemagick-on-ubuntu
+# convert -delay 50 -loop 0 *.png animation.gif
+# lub ffmpeg
+# ffmpeg -framerate 5 -i %03d.png -c:v libx264 -r 30 -pix_fmt yuv420p out.mp4
+
+# pogoda zmienia sie zbyt szybko - lepsze byłyby dane godzinowe
+# mozna skorzystac z https://dane.imgw.pl/data/dane_pomiarowo_obserwacyjne/dane_meteorologiczne/terminowe/klimat/ - pomiar co 3 razy na dobe (6, 12, 18),
+# ale wowczas ospowiednio nalezy dostosowac loadery
 
 
 
